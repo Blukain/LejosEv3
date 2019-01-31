@@ -1,0 +1,17 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="RobotEv3:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/RobotEv3_jar</output-path>
+    <root id="archive" name="RobotEv3.jar">
+      <element id="module-output" name="RobotEv3" />
+      <element id="module-output" name="main" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/slf4j-jdk14-1.7.25.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/slf4j-api-1.7.25.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/commons-codec-1.11.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/commons-lang3-3.8.1.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/bluecove-2.1.0.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/lib/bluecove-gpl-2.1.0.jar" path-in-jar="/" />
+      <element id="library" level="project" name="net.sf.bluecove:bluecove-gpl:2.1.0" />
+      <element id="library" level="project" name="net.sf.bluecove:bluecove:2.1.0" />
+    </root>
+  </artifact>
+</component>

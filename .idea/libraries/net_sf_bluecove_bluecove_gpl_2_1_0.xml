@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="net.sf.bluecove:bluecove-gpl:2.1.0" type="repository">
+    <properties maven-id="net.sf.bluecove:bluecove-gpl:2.1.0" />
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/lib/bluecove-gpl-2.1.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

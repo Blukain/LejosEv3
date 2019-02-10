@@ -1,32 +1,28 @@
-import org.ev3dev.hardware.motors.Motor;
+import lejos.hardware.motor.EV3LargeRegulatedMotor;
 
 class Movement extends Thread
 {
-    public static final String NORMAL = "normal";
-    public static final String INVERSED = "inversed";
-    public static final String FORWARD = "Forward";
-    public static final String BACKWARD = "Backward";
-    private boolean motorSxGo;
-    private boolean motorDxGo;
+    private int speed = 200;
+    private int acceleration = 6000;
+    private static final String FORWARD = "Forward";
+    private static final String BACKWARD = "Backward";
     private boolean go=true;
-    private Motor sx, dx;
+    private EV3LargeRegulatedMotor sx, dx;
     private String direction;
-    private int speed;
-    private String way;
     private boolean mutex=true;
+    private boolean automatic = false;
+    private boolean done = false;
 
     /***
      * Constructor for Motor control Thread
      * @param sx Left motor
      * @param dx Right motor
      */
-    public Movement(Motor sx, Motor dx, int speed, String way)
+    public Movement(EV3LargeRegulatedMotor sx, EV3LargeRegulatedMotor dx)
     {
         super("MovementController");
         this.dx = dx;
         this.sx = sx;
-        this.speed=speed;
-        this.way=way;
         direction = FORWARD;
     }
 
@@ -36,25 +32,32 @@ class Movement extends Thread
         setup();
         while(go)
         {
-            if (motorDxGo) dx.runForever();
-            else dx.stop();
-            if (motorSxGo) sx.runForever();
-            else sx.stop();
+            if(automatic)
+            {
+                if(!done)
+                {
+                    System.out.println("Automatic activated");
+                    forward();
+                    done = true;
+                }
+            }
+            else {
+                if(!done){
+                    System.out.println("Manual activated");
+                    brake();
+                    done = true;
+                }
+            }
         }
         brake();
     }
 
     public void turnDx()
     {
-        turnOff();
-        if(direction.equals(FORWARD)) sx.setPolarity(sx.getPolarity().equals("normal") ? "inversed" : "normal");
-        else dx.setPolarity(dx.getPolarity().equals("normal") ? "inversed" : "normal");
-        //setSpeed_SP();
-        sx.setPolarity(INVERSED);
-        dx.setPolarity(NORMAL);
-        sx.setSpeed_SP(speed);
-        dx.setSpeed_SP(speed);
-        turnOn(this.getName());
+        System.out.println("turndx");
+        brake();
+        dx.forward();
+        sx.backward();
         try
         {
             Thread.sleep(2000);
@@ -63,20 +66,15 @@ class Movement extends Thread
         {
             e.printStackTrace();
         }
-        turnOff();
+        brake();
     }
 
     void turnSx()
     {
-        turnOff();
-        if(direction.equals(FORWARD)) sx.setPolarity(sx.getPolarity().equals("normal") ? "inversed" : "normal");
-        else dx.setPolarity(dx.getPolarity().equals("normal") ? "inversed" : "normal");
-        //setSpeed_SP();
-        dx.setPolarity(INVERSED);
-        sx.setPolarity(NORMAL);
-        sx.setSpeed_SP(speed);
-        dx.setSpeed_SP(speed);
-        turnOn(this.getName());
+        System.out.println("turnsx");
+        brake();
+        dx.backward();
+        sx.forward();
         try
         {
             Thread.sleep(2000);
@@ -85,109 +83,30 @@ class Movement extends Thread
         {
             e.printStackTrace();
         }
-        turnOff();
-    }
-
-    void turnSxRel()
-    {
-        int pos = sx.getPosition();
-        int delta=430;
-        turnOff();
-        sx.setSpeed_SP(speed);
-        dx.setSpeed_SP(speed);
-        sx.setPosition_SPInt(delta);
-        dx.setPosition_SPInt(-delta);
-        sx.runToRelPos();
-        dx.runToRelPos();
-        while (pos<pos+delta){
-            try
-            {
-                wait();
-            }
-            catch (InterruptedException e)
-            {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    void turnDxRel()
-    {
-        int pos = dx.getPosition();
-        int delta=430;
-        turnOff();
-        sx.setSpeed_SP(speed);
-        dx.setSpeed_SP(speed);
-        dx.setPosition_SPInt(delta);
-        sx.setPosition_SPInt(-delta);
-        sx.runToRelPos();
-        dx.runToRelPos();
-        while (pos<pos+delta){
-            try
-            {
-                wait();
-            }
-            catch (InterruptedException e)
-            {
-                e.printStackTrace();
-            }
-        }
+        brake();
     }
 
     public void brake()
     {
-        sx.stop();
-        dx.stop();
-    }
-
-    void turnOff()
-    {
-        setMotorDxGo(false);
-        setMotorSxGo(false);
-    }
-
-    void turnOn(String name){
-        //System.out.println("TURNED ON BY: "+name);
-        setMotorDxGo(true);
-        setMotorSxGo(true);
+        System.out.println("Brake");
+        sx.stop(true);
+        dx.stop(true);
     }
 
     public void forward()
     {
-        turnOff();
-        dx.setPolarity(INVERSED);
-        sx.setPolarity(INVERSED);
-        setSpeed_SP();
-        if (!isMotorDxGo() && !isMotorSxGo()) turnOn(this.getName());
+        System.out.println("forward");
+        brake();
+        dx.backward();
+        sx.backward();
     }
 
     void backward()
     {
-        turnOff();
-        dx.setPolarity(NORMAL);
-        sx.setPolarity(NORMAL);
-        setSpeed_SP();
-        if (!isMotorDxGo() && !isMotorSxGo()) turnOn(this.getName());
-    }
-
-    public boolean isMotorSxGo()
-    {
-        return motorSxGo;
-    }
-
-    public boolean isMotorDxGo()
-    {
-        return motorDxGo;
-    }
-
-    public void setMotorSxGo(boolean motorSxGo)
-    {
-        this.motorSxGo = motorSxGo;
-    }
-
-    public void setMotorDxGo(boolean motorDxGo)
-    {
-        this.motorDxGo = motorDxGo;
+        System.out.println("backward");
+        brake();
+        dx.forward();
+        sx.forward();
     }
 
     public void terminate()
@@ -206,29 +125,31 @@ class Movement extends Thread
     }
 
     public void changeDirection(){
-        if (isMotorDxGo() && isMotorSxGo()) turnOff();
-        dx.setPolarity(dx.getPolarity().equals("normal") ? "inversed" : "normal");
-        sx.setPolarity(sx.getPolarity().equals("normal") ? "inversed" : "normal");
-        setDirection(getDirection().equals(FORWARD) ? BACKWARD : FORWARD);
-        setSpeed_SP();
-        turnOn(this.getName());
+        if(getDirection().equals(FORWARD)){
+            brake();
+            backward();
+            setDirection(BACKWARD);
+        }
+        else {
+            brake();
+            forward();
+            setDirection(FORWARD);
+        }
     }
 
-    public void setSpeed_SP(){
-        dx.setSpeed_SP(speed);
-        sx.setSpeed_SP(speed);
+    public void setSpeed(int speed){
+        dx.setSpeed(speed);
+        sx.setSpeed(speed);
     }
 
     public void setup(){
-        dx.reset();
-        sx.reset();
-        dx.setPolarity(way);
-        sx.setPolarity(way);
-        dx.setSpeed_SP(speed);
-        sx.setSpeed_SP(speed);
+        dx.resetTachoCount();
+        sx.resetTachoCount();
+        setSpeed(speed);
+        setAcceleration(acceleration);
     }
 
-    public synchronized void operate()
+    public synchronized void getControl()
     {
         while (!mutex){
             try
@@ -243,8 +164,48 @@ class Movement extends Thread
         mutex=false;
     }
 
-    public synchronized void operateDone(){
+    public synchronized void controlDone(){
         mutex=true;
         notifyAll();
+    }
+
+    public void setAuto(){
+        automatic = true;
+        done = false;
+    }
+
+    public void setManual(){
+        automatic = false;
+        done = false;
+    }
+
+    public void getTacho()
+    {
+        System.out.println("tacho dx: "+dx.getTachoCount());
+        System.out.println("tacho sx: "+sx.getTachoCount());
+    }
+
+    public void getSpeed()
+    {
+        System.out.println("speed dx: "+dx.getSpeed());
+        System.out.println("speed sx: "+sx.getSpeed());
+    }
+
+    public void getAcceleration()
+    {
+        System.out.println("Acc dx: "+dx.getAcceleration());
+        System.out.println("Acc sx: "+sx.getAcceleration());
+    }
+
+    public void getRotSpeed()
+    {
+        System.out.println("Rot dx: "+dx.getRotationSpeed());
+        System.out.println("Rot sx: "+sx.getRotationSpeed());
+    }
+
+    private void setAcceleration(int acceleration)
+    {
+        dx.setAcceleration(acceleration);
+        sx.setAcceleration(acceleration);
     }
 }

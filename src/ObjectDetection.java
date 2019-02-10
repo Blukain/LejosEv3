@@ -1,4 +1,4 @@
-import org.ev3dev.hardware.sensors.UltrasonicSensor;
+import lejos.hardware.sensor.EV3UltrasonicSensor;
 
 class ObjectDetection extends Thread
 {
@@ -6,31 +6,37 @@ class ObjectDetection extends Thread
      * Bin heoght 9cm, 2cm of border to be recognized
      * object dimension 3.5cm
      */
-    private UltrasonicSensor wall;
-    private UltrasonicSensor object;
+    private EV3UltrasonicSensor wall;
+    private EV3UltrasonicSensor object;
     private Movement movement;
     private ArmControl armControl;
     private boolean go = true;
-    private float walllimit = 190; // 190
-    private float objectlimit = 140; // 140
-    private float pickupDistance = 80; // 120
-    private float binAnalysisDistance = 140; // 130
-    private float binDistance = 50; // 50
+    private double walllimit = 0.211; // 190
+    private double objectlimit = 0.113; // 140
+    private double pickupDistance = 0.075; // 120
+    private double binAnalysisDistance = 0.135; // 130
+    private double binDistance = 0.050; // 50
     private boolean objectAcquired = false;
     private boolean pickup = false;
     private float objectDistance;
     private float wallDistance;
+    private boolean done = false;
+    private float[] objectSample;
+    private float[] wallSample;
+    private boolean automatic = false;
 
-    public ObjectDetection(UltrasonicSensor object, UltrasonicSensor wall, Movement movement, ArmControl armControl)
+    public ObjectDetection(EV3UltrasonicSensor object, EV3UltrasonicSensor wall, Movement movement, ArmControl armControl)
     {
         super("ObjectDetector");
         this.object = object;
         this.movement = movement;
-        this.armControl=armControl;
+        this.armControl = armControl;
         this.wall = wall;
+        objectSample = new float[object.getDistanceMode().sampleSize()];
+        wallSample = new float[wall.getDistanceMode().sampleSize()];
     }
 
-    public ObjectDetection(UltrasonicSensor object, float objectlimit, UltrasonicSensor wall, Movement movement, ArmControl armControl)
+    public ObjectDetection(EV3UltrasonicSensor object, float objectlimit, EV3UltrasonicSensor wall, Movement movement, ArmControl armControl)
     {
         this(object,wall,movement,armControl);
         this.objectlimit = objectlimit;
@@ -41,69 +47,101 @@ class ObjectDetection extends Thread
     {
         while (go)
         {
-            objectDistance = object.getDistanceCentimeters();
-            wallDistance = wall.getDistanceCentimeters();
-            if(wallDistance <= walllimit || objectDistance <= objectlimit)
+            if (automatic)
             {
-                movement.operate();
-                System.out.println("obj distance: "+objectDistance+"; limit: "+objectlimit);
-                System.out.println("wall distance: "+wallDistance+"; limit: "+walllimit);
-                if (objectDistance <= objectlimit)
-                { //Object detected
-                    System.out.println("Object detected");
-                    if (!objectAcquired) //Not holding an object
+                objectDistance = getObjectDistance();
+                wallDistance = getWallDistance();
+                if (wallDistance <= walllimit || objectDistance <= binAnalysisDistance)
+                {
+                    movement.getControl();
+                    movement.brake();
+                    System.out.println("obj distance: " + objectDistance + "; limit: " + objectlimit);
+                    System.out.println("wall distance: " + wallDistance + "; limit: " + walllimit);
+                    if (objectDistance <= binAnalysisDistance) //Object detected
                     {
-                        movement.turnOff();
+                        System.out.println("Object detected");
                         System.out.println("Proceding to investigate");
-                        // mettersi a bindistance e controllare a bindelta, se negativo, alzare,
-                        // porsi a objectlimit, controllare a liftdelta e controllare
-                        armControl.operate();
+                        armControl.getControl();
                         armControl.check();
-                        pickup = armControl.checkObject();
-                        if (pickup)
-                        {
-                            System.out.println("picking object");
-                            while (object.getDistanceCentimeters() > pickupDistance)
+                        if (!armControl.isHoldingObject()) // da completare
+                        {//Not holding an object
+                            pickup = armControl.checkObject();
+                            if (pickup)
                             {
-                                movement.turnOn(this.getName());
+                                System.out.println("picking object");
+                                try
+                                {
+                                    sleep(1000);
+                                }
+                                catch (InterruptedException e)
+                                {
+                                    e.printStackTrace();
+                                }
+                                moveTo(pickupDistance);
+                                try
+                                {
+                                    sleep(2000);
+                                }
+                                catch (InterruptedException e)
+                                {
+                                    e.printStackTrace();
+                                }
+                                armControl.picked();
                             }
-                            movement.turnOff();
-                            armControl.pickup();
-                            armControl.picked();
-                        }
-                        else armControl.notPicked();
-                        objectAcquired = armControl.isObject();
-                        armControl.done();
-                        if (objectAcquired){
-                            movement.turnOn(this.getName());
-                            System.out.println("object acquired");
-                        }
-                        else
-                        {
-                            movement.turnSx();
-                            movement.forward();
-                            System.out.println("object avoided");
-                        }
-                    }
-                    else
-                    {// Already holding an object
-                        System.out.println("Already holding object");
-                        while (object.getDistanceCentimeters() > binAnalysisDistance)//binDistance)
-                        {
-                            movement.turnOn(this.getName());
-                        }
-                        movement.turnOff();
-                        armControl.operate();
-                        armControl.check();
-                        if (ArmControl.release)
-                        {
-                            System.out.println("have to release object");
-                            while (object.getDistanceCentimeters() > binDistance)
+                            else
                             {
-                                movement.turnOn(this.getName());
+                                armControl.notPicked();
+                                System.out.println("Object not picked");
                             }
-                            movement.turnOff();
-                            armControl.check();
+                            armControl.restart();
+                            objectAcquired = armControl.isHoldingObject();
+                            armControl.controlDone();
+                            if (objectAcquired)
+                            {
+                                movement.forward();
+                                System.out.println("object acquired");
+                            }
+                            else
+                            {
+                                movement.turnSx();
+                                movement.forward();
+                                System.out.println("object avoided");
+                            }
+                        }
+                        else // completo
+                        {// Already holding an object
+                            System.out.println("Already holding object");
+                            if (armControl.getCurrentBinColor() == armControl.getCurrentObjectColor())
+                            {// object have to be released
+                                System.out.println("have to release object");
+                                try
+                                {
+                                    sleep(1000);
+                                }
+                                catch (InterruptedException e)
+                                {
+                                    e.printStackTrace();
+                                }
+                                moveTo(binDistance);
+                                try
+                                {
+                                    sleep(2000);
+                                }
+                                catch (InterruptedException e)
+                                {
+                                    e.printStackTrace();
+                                }
+                                armControl.check();
+                                System.out.println("Object released");
+                            }
+                            else
+                            {
+                                armControl.notPicked();
+                                System.out.println("Object not released");
+                            }
+                            armControl.restart();
+                            objectAcquired = armControl.isHoldingObject();
+                            armControl.controlDone();
                             movement.backward();
                             try
                             {
@@ -113,29 +151,50 @@ class ObjectDetection extends Thread
                             {
                                 e.printStackTrace();
                             }
-                            System.out.println("Object released");
+                            movement.turnSx();
+                            movement.forward();
                         }
-                        else
-                        {
-                            System.out.println("Object not released");
-                        }
-                        armControl.done();
-                        objectAcquired = armControl.isObject();
+                    }
+                    else
+                    {   //Wall detected
+                        System.out.println("Wall detected");
                         movement.turnSx();
                         movement.forward();
+                        System.out.println("wall avoided");
                     }
+                    movement.controlDone();
                 }
-                else
-                {   //Wall detected
-                    System.out.println("Wall detected");
-                    movement.turnSx();
-                    movement.forward();
-                    System.out.println("wall avoided");
-                }
-                movement.operateDone();
             }
         }
+    }
 
+    private void moveTo(double distance)
+    {
+        while (getObjectDistance() > distance){
+            movement.forward();
+        }
+        movement.brake();
+        done=true;
+    }
+
+    public float getObjectDistance()
+    {
+        object.getDistanceMode().fetchSample(objectSample,0);
+        return objectSample[0];
+    }
+
+    public float getWallDistance()
+    {
+        wall.getDistanceMode().fetchSample(wallSample, 0);
+        return wallSample[0];
+    }
+
+    public void setAuto(){
+        automatic = true;
+    }
+
+    public void setManual(){
+        automatic = false;
     }
 
     public void terminate()

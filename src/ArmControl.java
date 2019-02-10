@@ -1,56 +1,88 @@
-import org.ev3dev.hardware.motors.LargeMotor;
-import org.ev3dev.hardware.motors.MediumMotor;
-import org.ev3dev.hardware.sensors.ColorSensor;
-
+import lejos.hardware.motor.EV3LargeRegulatedMotor;
+import lejos.hardware.motor.EV3MediumRegulatedMotor;
+import lejos.hardware.sensor.EV3ColorSensor;
 import java.util.ArrayList;
 
 class ArmControl extends Thread
 {
-    public static int NOCOLOR = 0;
-    public static int BLACK = 1;
-    public static int BLUE = 2;
-    public static int GREEN = 3;
-    public static int YELLOW = 4;
-    public static int RED = 5;
-    public static int WHITE = 6;
-    public static int BROWN = 7;
+    /** deltas setting */
+    private static int clampdelta = -115;
+    private static int liftdelta = -2000;
+    private static int clampSpeed = 60;
+    private static int liftSpeed = 150;
+    private static int binDelta = -1000;
+
+    /** Color set as recognized from Ev3 */
+    public static final int	BLACK = 7;
+    public static final int	BLUE = 2;
+    public static final int	BROWN = 13;
+    public static final int	CYAN = 12;
+    public static final int	DARK_GRAY = 11;
+    public static final int	GRAY = 9;
+    public static final int	GREEN = 1;
+    public static final int	LIGHT_GRAY = 10;
+    public static final int	MAGENTA = 4;
+    public static final int	NONE = -1;
+    public static final int	ORANGE = 5;
+    public static final int	PINK = 8;
+    public static final int	RED = 0;
+    public static final int	WHITE = 6;
+    public static final int	YELLOW = 3;
+
+    /**
+     * Color Arrays: using positionin system
+     * - 0: Black<br>
+     * - 1: Blue<br>
+     * - 2: Green<br>
+     * - 3: Yellow<br>
+     * - 4: Red<br>
+     * - 5: White<br>
+     * - 6: Brown
+     * */
+    private static int[] objectPickedUp = {0,0,0,0,0,0,0};
+    private static int[] colerRequested = {0,0,0,0,0,0,0};
+    public static final int	ENCODEDBLACK = 0;
+    public static final int	ENCODEDBLUE = 1;
+    public static final int	ENCODEDGREEN = 2;
+    public static final int	ENCODEDYELLOW = 3;
+    public static final int	ENCODEDRED = 4;
+    public static final int	ENCODEDWHITE = 5;
+    public static final int	ENCODEDBROWN = 6;
+
+    /** Variable and objects */
     public static final String CLOSE = "normal";
     public static final String OPEN = "inversed";
-    private static int clampSpeed = 110;
-    private static int liftSpeed = 150;
-    private static int binDelta = 1000;
-    private boolean lift;
-    private boolean clamp;
     private boolean go;
-    private static int clampdelta = 120;
-    private static int liftdelta = 1800;
-    private LargeMotor liftmotor;
-    private MediumMotor clampmotor;
-    private ColorSensor colorSensor;
-    private String direction;
+    private EV3LargeRegulatedMotor liftmotor;
+    private EV3MediumRegulatedMotor clampmotor;
+    private EV3ColorSensor colorSensor;
     private boolean done = false;
-    private boolean object = false;
+    private boolean holdingObject = false;
     private boolean down = false;
     private boolean pickUp = false;
     private boolean open = false;
-    private boolean operate = false;
-    private boolean picked = false;
+    private boolean check = false;
     private boolean pickedDone = false;
-    public static boolean release = false;
     private static ArrayList<Integer> objectToPickUp = new ArrayList<>();
-    public static int currentObjectColor;
+    private Integer currentObjectColor;
     private boolean notPicked = false;
     private boolean mutex = true;
-    private boolean downBin =false;
+    private boolean identified = false;
+    private Integer currentBinColor;
+    private boolean analyzed = false;
+    private boolean isObject = false;
+    private boolean isBin = false;
+    private boolean bin = false;
+    private boolean object = false;
+    private boolean state = false;
 
     /***
      * Constructor for Motor control Thread
      * @param liftmotor the one responsible to lift up and down the crane arm
      * @param clampmotor the one responsible to open and close the clamp
-     * @param liftdelta the delta in rotation to lift up/down limit
-     * @param clampdelta the delta in rotation to close/open limit
+     * @param colorSensor the one responsible to analyze object encountered
      */
-    public ArmControl(LargeMotor liftmotor, MediumMotor clampmotor, ColorSensor colorSensor)
+    public ArmControl(EV3LargeRegulatedMotor liftmotor, EV3MediumRegulatedMotor clampmotor, EV3ColorSensor colorSensor)
     {
         super("ArmController");
         this.clampmotor = clampmotor;
@@ -59,7 +91,15 @@ class ArmControl extends Thread
         go = true;
     }
 
-    public ArmControl(LargeMotor liftmotor, int liftdelta, MediumMotor clampmotor, int clampdelta, ColorSensor colorSensor)
+    /***
+     * @param liftmotor the one responsible to lift up and down the crane arm
+     * @param clampmotor the one responsible to open and close the clamp
+     * @param colorSensor the one responsible to analyze object encountered
+     * @param liftdelta the delta in rotation to lift up/down limit
+     * @param clampdelta the delta in rotation to close/open limit
+     */
+
+    public ArmControl(EV3LargeRegulatedMotor liftmotor, int liftdelta, EV3MediumRegulatedMotor clampmotor, int clampdelta, EV3ColorSensor colorSensor)
     {
         this(liftmotor,clampmotor, colorSensor);
         this.clampdelta=clampdelta;
@@ -72,253 +112,154 @@ class ArmControl extends Thread
         setup();
         while(go)
         {
-            if(operate)
+            if(check)
             {
-                /**
-                 * Se nessun oggetto raccolto
-                 */
-                System.out.println("var object: "+object);
-                System.out.println("var notpicked: "+notPicked);
-                System.out.println("var pickup: "+pickUp);
-                System.out.println("var picked: "+picked);
-                if (!object)
+                /** Unknown Object **/
+                if (!identified)
                 {
-                    if(notPicked){
-                        System.out.println("lift up call extra");
+                    if (notPicked)
+                    {
+                        System.out.println("Object not Identified");
                         liftUp();
-                        while (down){
-                            try
-                            {
-                                wait();
-                            }
-                            catch (InterruptedException e)
-                            {
-                                e.printStackTrace();
-                            }
-                        }
-                        System.out.println("lifted up");
+                        restart();
                         notPickedDone();
                     }
-                    else if(!picked)
+                    else
                     {
-                        System.out.println("lift down call");
-                        liftDown();
-                        while (!down)
+                        if (!analyzed) /** Analyze upper level */
                         {
-                            try
+                            identified = identify(binDelta); //true if color present
+                            if (identified)
                             {
-                                wait();
+                                isBin = true;
                             }
-                            catch (InterruptedException e)
+                            else
                             {
-                                e.printStackTrace();
-                            }
-                        }
-                        System.out.println("lifted down");
-                        checkDone();
-                    }
-                    else {
-                        System.out.println("lift up call");
-                        liftUp();
-                        while (down){
-                            try
-                            {
-                                wait();
-                            }
-                            catch (InterruptedException e)
-                            {
-                                e.printStackTrace();
+                                analyzed = true;
                             }
                         }
-                        System.out.println("lifted up");
-                        pickedDone();
+                        else /** Analyze lower level */
+                        {
+                            identified = identify(liftdelta);
+                            if (identified)
+                            {
+                                isObject = true;
+                            }
+                            else
+                            {
+                                restart();
+                                checkDone();
+                            }
+                        }
                     }
                 }
-                else
+                else /** Object identified **/
                 {
-                    /**
-                     * se già raccolto un oggetto rilascia oggetto
-                     */
-                    if(!release)
-                    {
-                        System.out.println("lift down bin");
-                        liftDownBin();
-                        while (!downBin)
-                        {
-                            try
-                            {
-                                wait();
-                            }
-                            catch (InterruptedException e)
-                            {
-                                e.printStackTrace();
-                            }
-                        }
-                        System.out.println("Bin Analysis...");
-                        try
-                        {
-                            Thread.sleep(1000);
-                        }
-                        catch (InterruptedException e)
-                        {
-                            e.printStackTrace();
-                        }
-                        if (colorSensor.getColor() == ArmControl.currentObjectColor)
-                        {
-                            release = true;
-                        }
-                        else release = false;
-                        System.out.println("Calculating...");
-                        try
-                        {
-                            Thread.sleep(1000);
-                        }
-                        catch (InterruptedException e)
-                        {
-                            e.printStackTrace();
-                        }
-                        System.out.println("analysis Done!");
-                        System.out.println("lift up bin");
-                        liftUpBin();
-                        while (downBin)
-                        {
-                            try
-                            {
-                                wait();
-                            }
-                            catch (InterruptedException e)
-                            {
-                                e.printStackTrace();
-                            }
+                    if(isObject){ /** Object identified is a object **/
+                        if(colorAnalyze("obj")){ /** Object of interested color*/
+                            object = true;
+                            isObject = false;
                         }
                         checkDone();
                     }
-                    else {
-                        openClamp();
-                        while (!open){
-                            try
-                            {
-                                wait();
-                            }
-                            catch (InterruptedException e)
-                            {
-                                e.printStackTrace();
-                            }
+                    if(isBin) { /** Object identified is a bin **/
+                        if(colorAnalyze("bin")){ /** Bin of interested color*/
+                            liftUp();
+                            bin = true;
+                            isBin = false;
                         }
-                        try
+                        else {
+                            isBin = false;
+                        }
+                        checkDone();
+                    }
+                    if (notPicked)
+                    {
+                        System.out.println("Object not to be picked up");
+                        liftUp();
+                        restart();
+                        notPickedDone();
+                    }
+                    if (object)
+                    {
+                        if (pickUp)
                         {
-                            Thread.sleep(2000);
+                            pickup();
+                            liftUp();
+                            pickUp = false;
+                            restart();
+                            pickedDone();
                         }
-                        catch (InterruptedException e)
+                        else {
+                            System.out.println("identified-object-!pickup");
+                        }
+                    }
+                    if(bin)
+                    {
+                        /**
+                         * se già raccolto un oggetto rilascia oggetto
+                         */
+                        if(holdingObject)
                         {
-                            e.printStackTrace();
+                            releaseObject();
+                            decreaseColorRequested(colorEncode(currentObjectColor));
+                            addPickedColor(colorEncode(currentObjectColor));
+                            currentObjectColor = NONE;
+                            currentBinColor = NONE;
+                            holdingObject = false;
                         }
-                        closeClamp();
-                        while (open){
-                            try
-                            {
-                                wait();
-                            }
-                            catch (InterruptedException e)
-                            {
-                                e.printStackTrace();
-                            }
+                        else {
+                            System.out.println("identified-bin-!holdingobject");
                         }
-                        release=false;
-                        object=false;
                         checkDone();
                     }
                 }
             }
         }
+        shutDown();
+    }
+
+    public void restart(){
+        this.bin = false;
+        this.object = false;
+        this.identified = false;
+        this.analyzed = false;
+        this.isObject = false;
+        this.isBin = false;
+        this.notPicked = false;
+    }
+
+    private void shutDown()
+    {
         clampmotor.stop();
         liftmotor.stop();
         if(down)
         {
             liftUp();
-            while (down)
-            {
-                try
-                {
-                    wait();
-                }
-                catch (InterruptedException e)
-                {
-                    e.printStackTrace();
-                }
-            }
         }
         if(open)
         {
             closeClamp();
-            while (open){
-                try
-                {
-                    wait();
-                }
-                catch (InterruptedException e)
-                {
-                    e.printStackTrace();
-                }
-            }
         }
     }
 
-    public void open()
+    private void releaseObject()
     {
-        clampmotor.setPolarity(clampmotor.getPolarity() == "normal" ? "inversed" : "normal");
-    }
-
-    public void close()
-    {
-        liftmotor.setPolarity(liftmotor.getPolarity() == "normal" ? "inversed" : "normal");
-    }
-
-    public void brake()
-    {
-        liftmotor.stop();
-        clampmotor.stop();
-    }
-
-    public void pause()
-    {
-        setClamp(false);
-        setLift(false);
-    }
-
-    public boolean isLift()
-    {
-        return lift;
-    }
-
-    public boolean isClamp()
-    {
-        return clamp;
-    }
-
-    public void setLift(boolean lift)
-    {
-        this.lift = lift;
-    }
-
-    public void setClamp(boolean clamp)
-    {
-        this.clamp = clamp;
+        openClamp();
+        try
+        {
+            Thread.sleep(1000);
+        }
+        catch (InterruptedException e)
+        {
+            e.printStackTrace();
+        }
+        closeClamp();
     }
 
     public void terminate()
     {
         go = false;
-    }
-
-    public void setDirection(String direction)
-    {
-        this.direction = direction;
-    }
-
-    public String getDirection()
-    {
-        return direction;
     }
 
     /**
@@ -332,31 +273,70 @@ class ArmControl extends Thread
      * - 6: White<br>
      * - 7: Brown
     **/
-    public synchronized void analyze()
+    private synchronized boolean identify(int delta)
     {
-        System.out.println("Analyzing...");
+        boolean recognized = false;
+        System.out.println("lift down");
+        liftDown(delta);
+        System.out.println("Identifying...");
         try
         {
-            Thread.sleep(2000);
+            Thread.sleep(1000);
         }
         catch (InterruptedException e)
         {
             e.printStackTrace();
         }
+        if (colorSensor.getColorID() != -1 && colorSensor.getColorID() != 7)
+        {
+            recognized = true;
+        }
+        else
+        {
+            recognized = false;
+        }
+        System.out.println("COLOR: "+toColorName(colorSensor.getColorID()));
+        processing();
+        return recognized;
+    }
+
+
+    public synchronized boolean colorAnalyze(String object)
+    {
+        System.out.println("Color analisys");
+        try
+        {
+            Thread.sleep(1000);
+        }
+        catch (InterruptedException e)
+        {
+            e.printStackTrace();
+        }
+        boolean recognized = false;
         for (Integer i:objectToPickUp)
         {
-            if (colorSensor.getColor() == i)
+            if (colorSensor.getColorID() == i)
             {
-                pickUp = true;
-                currentObjectColor = i;
+                recognized = true;
+                if(object.equals("bin")) setCurrentBinColor(i);
+                else{
+                    if(!holdingObject) pickUp = true;
+                    setCurrentObjectColor(i);
+                }
                 break;
             }
-            else pickUp=false;
         }
+        System.out.println("COLOR: "+toColorName(colorSensor.getColorID()));
+        processing();
+        return recognized;
+    }
+
+    private void processing()
+    {
         System.out.println("Calculating...");
         try
         {
-            Thread.sleep(2000);
+            Thread.sleep(1000);
         }
         catch (InterruptedException e)
         {
@@ -367,106 +347,57 @@ class ArmControl extends Thread
 
     public synchronized void openClamp()
     {
-        clampmotor.setPosition_SPInt(-clampdelta);
-        clampmotor.setPolarity(OPEN);
-        clampmotor.setSpeed_SP(clampSpeed);
-        while (clampmotor.getPosition()<clampdelta)
-        {
-            clampmotor.runForever();
-        }
-        clampmotor.stop();
+        clampmotor.setSpeed(clampSpeed);
+        clampmotor.rotateTo(clampdelta);
         open=true;
     }
 
     public synchronized void closeClamp()
     {
-        clampmotor.setPosition_SPInt(0);
-        clampmotor.setPolarity(CLOSE);
-        clampmotor.setSpeed_SP(clampSpeed);
-        while (clampmotor.getPosition()<0){
-            clampmotor.runForever();
-            try
-            {
-                Thread.sleep(2000);
-            }
-            catch (InterruptedException e)
-            {
-                e.printStackTrace();
-            }
-            if(clampmotor.getPosition()<0){
-                clampmotor.setPosition_SPInt(clampmotor.getPosition()+30);
-                break;
-            }
+        int position = 0;
+        clampmotor.setSpeed(clampSpeed);
+        clampmotor.rotateTo(0,true);
+        while(clampmotor.getPosition()<0)
+        {
+            System.out.println("position: " + clampmotor.getPosition());
+            System.out.println("tachocount: " + clampmotor.getTachoCount());
+            position = (int) (clampmotor.getPosition() + 30);
+            break;
         }
         clampmotor.stop();
-        clampmotor.runToRelPos();
+        clampmotor.rotateTo(position,true);
         open=false;
     }
 
-    public void liftDown()
+    public void liftDown(int liftdelta)
     {
-        liftmotor.setPosition_SPInt(-liftdelta);
-        liftmotor.setPolarity("inversed");
-        liftmotor.setSpeed_SP(liftSpeed);
-        while (liftmotor.getPosition()<liftdelta){
-            liftmotor.runForever();
-        }
-        liftmotor.stop();
+        liftmotor.setSpeed(liftSpeed);
+        liftmotor.rotateTo(liftdelta);
         down=true;
     }
 
     public void liftUp()
     {
-        liftmotor.setPosition_SPInt(0);
-        liftmotor.setPolarity("normal");
-        liftmotor.setSpeed_SP(liftSpeed);
-        liftmotor.runToRelPos();
-        while (liftmotor.getPosition()<0){
-            liftmotor.runForever();
-        }
-        liftmotor.stop();
+        liftmotor.setSpeed(liftSpeed);
+        liftmotor.rotateTo(0);
         down=false;
     }
 
-    public void liftDownBin()
-    {
-        liftmotor.setPosition_SPInt(-binDelta);
-        liftmotor.setPolarity("inversed");
-        liftmotor.setSpeed_SP(liftSpeed);
-        while (liftmotor.getPosition()<binDelta){
-            liftmotor.runForever();
-        }
-        liftmotor.stop();
-        downBin=true;
-    }
-
-    public void liftUpBin()
-    {
-        liftmotor.setPosition_SPInt(0);
-        liftmotor.setPolarity("normal");
-        liftmotor.setSpeed_SP(liftSpeed);
-        liftmotor.runToRelPos();
-        while (liftmotor.getPosition()<0){
-            liftmotor.runForever();
-        }
-        liftmotor.stop();
-        downBin=false;
-    }
-
     public void setup(){
-        liftmotor.reset();
-        clampmotor.reset();
-        colorSensor.setMode(ColorSensor.SYSFS_COLOR_MODE);
+        liftmotor.resetTachoCount();
+        clampmotor.resetTachoCount();
+        currentBinColor = NONE;
+        currentObjectColor = NONE;
     }
 
-    public boolean isObject()
+    public boolean isHoldingObject()
     {
-        return object;
+        return holdingObject;
     }
 
     public synchronized void check()
     {
-        operate = true;
+        check = true;
         while (!done){
             try
             {
@@ -482,14 +413,13 @@ class ArmControl extends Thread
 
     private synchronized void checkDone()
     {
-        operate = false;
+        check = false;
         done = true;
         notifyAll();
     }
 
     public synchronized boolean checkObject()
     {
-        analyze();
         System.out.println("pickup: "+pickUp);
         if (pickUp)
         {
@@ -511,21 +441,10 @@ class ArmControl extends Thread
 
     public synchronized void pickup(){
         closeClamp();
-        while (open){
-            try
-            {
-                wait();
-            }
-            catch (InterruptedException e)
-            {
-                e.printStackTrace();
-            }
-        }
-        picked = true;
     }
 
     public synchronized void picked(){
-        operate = true;
+        check = true;
         while (!pickedDone){
             try
             {
@@ -536,20 +455,19 @@ class ArmControl extends Thread
                 e.printStackTrace();
             }
         }
-        picked = false;
         pickedDone=false;
     }
 
     private synchronized void pickedDone(){
-        operate = false;
+        check = false;
         pickedDone = true;
-        object = true;
+        holdingObject = true;
         notifyAll();
     }
 
     public synchronized void notPicked(){
         notPicked = true;
-        operate = true;
+        check = true;
         while (notPicked){
             try
             {
@@ -563,12 +481,12 @@ class ArmControl extends Thread
     }
 
     private synchronized void notPickedDone(){
-        operate = false;
+        check = false;
         notPicked = false;
         notifyAll();
     }
 
-    public synchronized void operate()
+    public synchronized void getControl()
     {
         while (!mutex){
             try
@@ -583,21 +501,154 @@ class ArmControl extends Thread
         mutex=false;
     }
 
-    public synchronized void done(){
+    public synchronized void controlDone(){
         mutex=true;
         notifyAll();
     }
 
+    public int getCurrentObjectColor()
+    {
+        return currentObjectColor;
+    }
+
+    public int getCurrentBinColor()
+    {
+        return currentBinColor;
+    }
+
+    public void setCurrentObjectColor(Integer currentObjectColor)
+    {
+        this.currentObjectColor = currentObjectColor;
+    }
+
+    public void setCurrentBinColor(Integer currentBinColor)
+    {
+        this.currentBinColor = currentBinColor;
+    }
+
+    public String toColorName (int color)
+    {
+        if (color == BLACK) return "Black";
+        else if (color == BLUE) return "Blue";
+        else if (color == GREEN) return "Green";
+        else if (color == YELLOW) return "Yellow";
+        else if (color == RED) return "Red";
+        else if (color == WHITE) return "White";
+        else if (color == BROWN) return "Brown";
+        else return "Nocolor";
+    }
+
     /**
-     * Bluetooth function to set which elemnts to pickup
+     * Bluetooth function to set which elements to pickup
      **/
     public boolean addColor(int i){
-        if(!objectToPickUp.contains(i)) objectToPickUp.add(i);
-        return true;
+        if(!objectToPickUp.contains(i)){
+            objectToPickUp.add(i);
+            return true;
+        }
+        else return false;
     }
 
     public boolean removeColor(int i){
-        if(objectToPickUp.contains(i)) objectToPickUp.remove(i);
+        if(objectToPickUp.contains(i)){
+            objectToPickUp.remove(i);
+            return true;
+        }
         return false;
+    }
+
+    public boolean setAmountPickedColor(int color, int amount){
+        if(color<0 || color>objectPickedUp.length) return false;
+        else
+        {
+            objectPickedUp[color]=-amount; //correggere
+            return true;
+        }
+    }
+
+    public static int[] getObjectPickedUp()
+    {
+        return objectPickedUp;
+    }
+
+    public int colorEncode (int color)
+    {
+        int encoded = -1;
+        switch (color)
+        {
+            case BLACK: encoded = ENCODEDBLACK; break;
+            case BLUE: encoded = ENCODEDBLUE; break;
+            case GREEN: encoded = ENCODEDGREEN; break;
+            case YELLOW: encoded = ENCODEDYELLOW; break;
+            case RED: encoded = ENCODEDRED; break;
+            case WHITE: encoded = ENCODEDWHITE; break;
+            case BROWN: encoded = ENCODEDBROWN; break;
+        }
+        return encoded;
+    }
+
+    public boolean addPickedColor(int color){
+        if(color>=0 || color<=6)
+        {
+            objectPickedUp[color]++;
+            setState(true);
+            return true;
+        }
+        else return false;
+    }
+
+    public boolean resetPickedColor(int i){
+        for (i=0;i<objectPickedUp.length; i++){
+            objectPickedUp[i] = 0;
+        }
+        return true;
+    }
+
+    public synchronized void clampBluetooth(int position)
+    {
+        int angle = position/clampdelta;
+        clampmotor.setSpeed(clampSpeed);
+        clampmotor.rotateTo(angle);
+    }
+
+    public synchronized void liftBluetooth(int position)
+    {
+        int angle = position/liftdelta;
+        liftmotor.setSpeed(liftSpeed);
+        liftmotor.rotate(angle);
+    }
+
+    public boolean checkState(){
+        return state;
+    }
+
+    public void setState(boolean state)
+    {
+        this.state = state;
+    }
+
+    public void setColorRequestedBluetooth(int color, int amount)
+    {
+        colerRequested[color-1] = amount;
+    }
+
+    public void decreaseColorRequested(int color)
+    {
+        if(color>=0 || color<=6)
+        {
+            if (colerRequested[color] > 0) colerRequested[color]--;
+        }
+    }
+
+    public void getColorRequested()
+    {
+        for (int i=0;i<colerRequested.length;i++){
+            if(colerRequested[i]>0){
+                addColor(i);
+            }
+            else {
+                removeColor(i);
+            }
+        }
     }
 }

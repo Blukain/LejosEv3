@@ -6,7 +6,7 @@ import java.util.ArrayList;
 class ArmControl extends Thread
 {
     /** deltas setting */
-    private static int clampdelta = -115;
+    private static int clampdelta = -114;
     private static int liftdelta = -2000;
     private static int clampSpeed = 60;
     private static int liftSpeed = 150;
@@ -121,7 +121,6 @@ class ArmControl extends Thread
                     {
                         System.out.println("Object not Identified");
                         liftUp();
-                        restart();
                         notPickedDone();
                     }
                     else
@@ -131,10 +130,12 @@ class ArmControl extends Thread
                             identified = identify(binDelta); //true if color present
                             if (identified)
                             {
+                                System.out.println("Object Identified");
                                 isBin = true;
                             }
                             else
                             {
+                                System.out.println("Object Unidentified");
                                 analyzed = true;
                             }
                         }
@@ -143,6 +144,7 @@ class ArmControl extends Thread
                             identified = identify(liftdelta);
                             if (identified)
                             {
+                                System.out.println("Object Unidentified");
                                 isObject = true;
                             }
                             else
@@ -276,7 +278,8 @@ class ArmControl extends Thread
     private synchronized boolean identify(int delta)
     {
         boolean recognized = false;
-        System.out.println("lift down");
+        System.out.println("lift down to: ");
+        System.out.println(delta);
         liftDown(delta);
         System.out.println("Identifying...");
         try
@@ -295,7 +298,6 @@ class ArmControl extends Thread
         {
             recognized = false;
         }
-        System.out.println("COLOR: "+toColorName(colorSensor.getColorID()));
         processing();
         return recognized;
     }
@@ -347,7 +349,6 @@ class ArmControl extends Thread
 
     public synchronized void openClamp()
     {
-        clampmotor.setSpeed(clampSpeed);
         clampmotor.rotateTo(clampdelta);
         open=true;
     }
@@ -355,7 +356,6 @@ class ArmControl extends Thread
     public synchronized void closeClamp()
     {
         int position = 0;
-        clampmotor.setSpeed(clampSpeed);
         clampmotor.rotateTo(0,true);
         while(clampmotor.getPosition()<0)
         {
@@ -371,14 +371,12 @@ class ArmControl extends Thread
 
     public void liftDown(int liftdelta)
     {
-        liftmotor.setSpeed(liftSpeed);
         liftmotor.rotateTo(liftdelta);
         down=true;
     }
 
     public void liftUp()
     {
-        liftmotor.setSpeed(liftSpeed);
         liftmotor.rotateTo(0);
         down=false;
     }
@@ -420,20 +418,10 @@ class ArmControl extends Thread
 
     public synchronized boolean checkObject()
     {
-        System.out.println("pickup: "+pickUp);
+        //System.out.println("pickup: "+pickUp);
         if (pickUp)
         {
             openClamp();
-            while (!open){
-                try
-                {
-                    wait();
-                }
-                catch (InterruptedException e)
-                {
-                    e.printStackTrace();
-                }
-            }
             return true;
         }
         else return false;
@@ -482,7 +470,6 @@ class ArmControl extends Thread
 
     private synchronized void notPickedDone(){
         check = false;
-        notPicked = false;
         notifyAll();
     }
 
@@ -606,16 +593,12 @@ class ArmControl extends Thread
 
     public synchronized void clampBluetooth(int position)
     {
-        int angle = position/clampdelta;
-        clampmotor.setSpeed(clampSpeed);
-        clampmotor.rotateTo(angle);
+        clampmotor.rotateTo(-position);
     }
 
     public synchronized void liftBluetooth(int position)
     {
-        int angle = position/liftdelta;
-        liftmotor.setSpeed(liftSpeed);
-        liftmotor.rotate(angle);
+        liftmotor.rotateTo(-position);
     }
 
     public boolean checkState(){

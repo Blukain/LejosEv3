@@ -208,4 +208,40 @@ class Movement extends Thread
         dx.setAcceleration(acceleration);
         sx.setAcceleration(acceleration);
     }
+
+    /**
+     * Bluetooth function to set which elements to pickup
+     **/
+
+    public void turnDxBluetooth()
+    {
+        System.out.println("turndx");
+        brake();
+        dx.forward();
+        sx.backward();
+    }
+
+    void turnSxBluetooth()
+    {
+        System.out.println("turnsx");
+        brake();
+        dx.backward();
+        sx.forward();
+    }
+
+    public void brakeBluetooth()
+    {
+        brake();
+    }
+
+    public void forwardBluetooth()
+    {
+        forward();
+    }
+
+    void backwardBluetooth()
+    {
+        backward();
+    }
+
 }

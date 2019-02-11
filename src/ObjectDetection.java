@@ -69,23 +69,7 @@ class ObjectDetection extends Thread
                             if (pickup)
                             {
                                 System.out.println("picking object");
-                                try
-                                {
-                                    sleep(1000);
-                                }
-                                catch (InterruptedException e)
-                                {
-                                    e.printStackTrace();
-                                }
                                 moveTo(pickupDistance);
-                                try
-                                {
-                                    sleep(2000);
-                                }
-                                catch (InterruptedException e)
-                                {
-                                    e.printStackTrace();
-                                }
                                 armControl.picked();
                             }
                             else
@@ -170,11 +154,9 @@ class ObjectDetection extends Thread
 
     private void moveTo(double distance)
     {
-        while (getObjectDistance() > distance){
-            movement.forward();
-        }
+        movement.forward();
+        while (getObjectDistance() > distance){}
         movement.brake();
-        done=true;
     }
 
     public float getObjectDistance()

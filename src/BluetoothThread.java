@@ -17,15 +17,17 @@ public class BluetoothThread extends Thread
     private int TERMINATE = 4;
     private int state=NOTCONNECTED;
     private int timeout = 10000;
-    private boolean go = true;
-    private BTConnection btConnection = null;
+    private Sender sender;
     private BTConnector btConnector = null;
     private String message = null;
     private DataInputStream reader = null;
     private DataOutputStream writer = null;
+    private int bytes;
     private int data;
     private byte[] inBuffer;
     private byte[] outBuffer;
+    private BTConnection btConnection;
+
     /** Bluetooth message variable*/
     private byte STOP = 0;
     private byte FORWARD = 1;
@@ -47,12 +49,22 @@ public class BluetoothThread extends Thread
     private byte WHITE = 16;
     private byte BROWN = 17;
 
+    private byte DETECTED = 20;
+    private byte PICKED = 21;
+    private byte NOTPICKED = 22;
+
+    private byte RESET = 99;
+
     /** Robot Variable */
     private Movement movement;
+    private boolean go = true;
     private ArmControl armControl;
     private FallDetection fallDetection;
     private ObjectDetection objectDetection;
     private static int[] objectPickedUp;
+    private int objectDetected = 0;
+    private int objectNotPicked = 0;
+    private int objectPicked = 0;
 
     /** Lcd messages */
     private String waiting = "Waiting for\n connection..";
@@ -60,7 +72,6 @@ public class BluetoothThread extends Thread
     private String closing = "Closing connection";
     private String error = "Connection error";
     private String terminated = "Terminated";
-    private int bytes;
     private String socket = "Socket opened";
 
     public BluetoothThread(Movement movement, ArmControl armControl, FallDetection fallDetection, ObjectDetection objectDetection)
@@ -74,59 +85,62 @@ public class BluetoothThread extends Thread
     @Override
     public void run()
     {
+        setup();
         while(go && state!=TERMINATE)
         {
             if(state==NOTCONNECTED)
             {
-                startConnection();
+                System.out.println(waiting);
+                btConnection = btConnector.waitForConnection(timeout, BTConnection.RAW);
+                if(btConnection != null)
+                {
+                    openStream();
+                }
+                else {
+                    System.out.println("Connection timed out: waited 10 sec");
+                }
             }
             else if(state==SOCKETOPENED)
             {
+                System.out.println("Waiting message");
                 WaitMessage();
             }
             else if(state == CONNECTED)
             {
-                int length=0;
+                if(sender == null)
+                {
+                    sender = new Sender();
+                    sender.start();
+                }
+                else {
+                    if (sender.getState()!=State.RUNNABLE){
+                        sender.start();
+                    }
+                }
                 System.out.println("waiting command");
-                try
-                {
-                    length = reader.readInt(); //read amount of byte
-                }
-                catch (IOException e)
-                {
-                    System.out.println("Error length: "+length+" stack: "+e);
-                    state = ERROR;
-                }
+                int length=0;
+                length = ReadMessageLength(length);
                 inBuffer = new byte[length];
                 if(length>0)
                 {
-                    //System.out.println("length > 0");
-                    try
-                    {
-                        bytes = reader.read(inBuffer, 0, inBuffer.length);// bytes read from incoming message
-                    }
-                    catch (IOException e)
-                    {
-                        System.out.println("ERROR read: " + e);
-                        state = ERROR;
-                        //interruptConnection(btConnector);
-                    }
+                    bytes = ReadMessage();
+                    System.out.println("Bytes Read: "+bytes);
                     if (bytes > 0)
                     {
-                        if (inBuffer[0] == MANUAL)
+                        if (inBuffer[0] == RESET)
+                        {
+                            System.out.println("Reset Command");
+                        }
+                        else if (inBuffer[0] == MANUAL)
                         {
                             System.out.println("manual command");
-                            movement.setManual();
-                            fallDetection.setManual();
-                            objectDetection.setManual();
+                            setRobotManual();
                         }
                         else if (inBuffer[0] == AUTO)
                         {
                             System.out.println("auto command");
                             armControl.getColorRequested();
-                            movement.setAuto();
-                            fallDetection.setAuto();
-                            objectDetection.setAuto();
+                            setRobotAuto();
                         }
                         else if (inBuffer[0] == TURNSX)
                         {
@@ -152,6 +166,7 @@ public class BluetoothThread extends Thread
                         {
                             if (length==2)
                             {
+                                armControl.clampStopBluetooth();
                                 armControl.clampBluetooth(inBuffer[1]);
                             }
                         }
@@ -159,6 +174,7 @@ public class BluetoothThread extends Thread
                         {
                             if (length==2)
                             {
+                                armControl.liftStopBluetooth();
                                 armControl.liftBluetooth(inBuffer[1]);
                             }
                         }
@@ -168,6 +184,8 @@ public class BluetoothThread extends Thread
                             if (length==3)
                             {
                                 System.out.println("Colori Command");
+                                System.out.println("Color: "+inBuffer[1]);
+                                System.out.println("Amount: "+inBuffer[2]);
                                 armControl.setColorRequestedBluetooth(inBuffer[1], inBuffer[2]);
                             }
                         }
@@ -176,35 +194,18 @@ public class BluetoothThread extends Thread
                             System.out.println("Unrecognized Command");
                         }
                     }
-                    if (armControl.checkState())
-                    {
-                        objectPickedUp = armControl.getObjectPickedUp();
-                        outBuffer = new byte[objectPickedUp.length+1];
-                        outBuffer[0] = COLORE;
-                        for (int i = 0; i < objectPickedUp.length; i++)
-                        {
-                            //outBuffer[i+1] = colorConvert(i);
-                            outBuffer[i+1] = (byte) objectPickedUp[i];
-                        }
-                        try
-                        {
-                            writer.writeInt(outBuffer.length);
-                            writer.write(outBuffer);
-                            writer.flush();
-                        }
-                        catch (IOException e)
-                        {
-                            System.out.println("Color send ERROR: is stream open? STACK: "+e);
-                        }
-                        armControl.setState(false);
-                    }
+                }
+                else{
+                    state = ERROR;
                 }
                 inBuffer = null;
             }
             else if(state == ERROR)
             {
                 System.out.println(error);
-                interruptConnection();
+                cancelConnection();
+                closeStream();
+                //closeConnection(btConnection);
                 state = NOTCONNECTED;
             }
         }
@@ -212,11 +213,97 @@ public class BluetoothThread extends Thread
         System.out.println("Bluetooth Thread ENDED");
     }
 
+    private void cancelConnection()
+    {
+        btConnector.cancel();
+    }
+
+    private void setRobotAuto()
+    {
+        //fallDetection.setAuto();
+        objectDetection.setAuto();
+        movement.setAuto();
+    }
+
+    private void setRobotManual()
+    {
+        movement.setManual();
+        objectDetection.setManual();
+        //fallDetection.setManual();
+    }
+
+    private void sendSingleData(byte type, int variable)
+    {
+        outBuffer = new byte[2];
+        outBuffer[0] = type;
+        outBuffer[1] = (byte) variable;
+        sendData();
+    }
+
+    private void sendMultipleData(byte type, int[] array,int length)
+    {
+        outBuffer = new byte[length + 1];
+        outBuffer[0] = type;
+        for (int i = 0; i < length; i++)
+        {
+            outBuffer[i + 1] = (byte) array[i];
+        }
+        sendData();
+    }
+
+    private void sendData()
+    {
+        System.out.println("Sending data");
+        try
+        {
+            writer.writeInt(outBuffer.length);
+            writer.write(outBuffer);
+            writer.flush();
+            System.out.println("Sent:");
+            System.out.println("length: "+outBuffer.length);
+            System.out.println("data: "+outBuffer);
+        }
+        catch (IOException e)
+        {
+            System.out.println("SEND ERROR: is stream open?");
+        }
+        outBuffer = null;
+    }
+
+    private int ReadMessage()
+    {
+        int bytes = -1;
+        try
+        {
+            bytes = reader.read(inBuffer, 0, inBuffer.length);// bytes read from incoming message
+        }
+        catch (IOException e)
+        {
+            System.out.println("ERROR reading message: " + e);
+            state = ERROR;
+        }
+        return bytes;
+    }
+
+    private int ReadMessageLength(int length)
+    {
+        try
+        {
+            length = reader.readInt(); //read amount of byte
+        }
+        catch (IOException e)
+        {
+            System.out.println("Error reading length");
+            state = ERROR;
+            length = 0;
+        }
+        return length;
+    }
+
     private void WaitMessage()
     {
         try
         {
-            System.out.println("Waiting message");
             while ((message = getMessage()) != null)
             {
                 System.out.println("Received: " + message);
@@ -235,35 +322,43 @@ public class BluetoothThread extends Thread
         catch (Exception e)
         {
             System.out.println("ERROR: BT Socket crashed!");
-            interruptConnection();
+            closeStream();
         }
     }
 
-    private void interruptConnection()
+    private void closeConnection()
     {
-        if(state==NOTCONNECTED){
-            System.out.println("Cancel Connection");
-            btConnector.cancel();
-        }
-        else
+        if (btConnection != null)
         {
             System.out.println(closing);
-            stopConnection();
-            System.out.println("Closed");
+            try
+            {
+                btConnection.close();
+                state = NOTCONNECTED;
+                System.out.println("Closed");
+            }
+            catch (IOException e)
+            {
+                System.out.println("Error closing connection");
+                e.printStackTrace();
+            }
         }
     }
 
-    public void startConnection () {
+    public void setup() {
         LocalBTDevice localBTDevice = Bluetooth.getLocalDevice();
         if (!localBTDevice.getVisibility())
         {
             localBTDevice.setVisibility(true);
         }
-        btConnector = new BTConnector();
+        if(btConnector == null) btConnector = new BTConnector();
+    }
+
+    private void openStream()
+    {
         try
         {
-            System.out.println(waiting);
-            btConnection = btConnector.waitForConnection(timeout, BTConnection.RAW);
+            System.out.println("Opening Stream");
             reader = new DataInputStream(btConnection.openInputStream());
             writer = new DataOutputStream(btConnection.openDataOutputStream());
             state = SOCKETOPENED;
@@ -271,8 +366,8 @@ public class BluetoothThread extends Thread
         }
         catch (Exception ex)
         {
-            System.out.println("Connection timedout: waited 10 sec");
-            interruptConnection();
+            System.out.println("Error opening stream");
+            ex.printStackTrace();
         }
     }
 
@@ -284,41 +379,26 @@ public class BluetoothThread extends Thread
         catch (IOException e)
         {
             System.out.println("Error getting message is socket still opened?");
+            state = ERROR;
         }
         return message;
     }
-/*
-    public byte getData(){
-        try
-        {
-            data = reader.readByte();
-        }
-        catch (IOException e)
-        {
-            System.out.println("Error EOF Reached");
-            return -1;
-        }
-        return data;
-    }*/
 
-    public int getData(){
+    public void closeStream() {
+        System.out.println("Closing stream");
         try
         {
-            bytes = reader.read(inBuffer);
-        }
-        catch (IOException e)
-        {
-            e.printStackTrace();
-        }
-        return btConnection.read(inBuffer,bytes);
-    }
-
-    public void stopConnection() {
-        try
-        {
-            reader.close();
-            writer.close();
-            btConnection.close();
+            if(reader!=null)
+            {
+                reader.close();
+                reader = null;
+            }
+            if(writer!=null)
+            {
+                writer.close();
+                writer = null;
+            }
+            System.out.println("Closed");
         }
         catch (IOException e)
         {
@@ -326,44 +406,34 @@ public class BluetoothThread extends Thread
         }
     }
 
-    /***
-     * Color detected by the sensor, categorized by overall value. <br>
-     * - 0: No color<br>
-     * - 1: Black<br>
-     * - 2: Blue<br>
-     * - 3: Green<br>
-     * - 4: Yellow<br>
-     * - 5: Red<br>
-     * - 6: White<br>
-     * - 7: Brown
-     * Color converter number to String
-     * @param color integer number
-     * @return String name of corresponding color number
-     */
-    private byte colorConvert (int color){
-        if (color == 1) return BLACK;
-        else if (color == 2) return BLUE;
-        else if (color == 3) return GREEN;
-        else if (color == 4) return YELLOW;
-        else if (color == 5) return RED;
-        else if (color == 6) return WHITE;
-        else if (color == 7) return BROWN;
-        else return NOCOLOR;
-    }
-
-    private int colorConvert (byte color){
-        if (color == BLACK) return armControl.BLACK;
-        else if (color == BLUE) return armControl.BLUE;
-        else if (color == GREEN) return armControl.GREEN;
-        else if (color == YELLOW) return armControl.YELLOW;
-        else if (color == RED) return armControl.RED;
-        else if (color == WHITE) return armControl.WHITE;
-        else if (color == BROWN) return armControl.BROWN;
-        else return NOCOLOR;
-    }
-
     public void terminate()
     {
         go=false;
+    }
+
+    public class Sender extends Thread{
+        @Override
+        public void run()
+        {
+            System.out.println("Sender Running");
+            while (state == CONNECTED)
+            {
+                if (armControl.checkState())
+                {
+                    System.out.println("State Send");
+                    /*objectPickedUp = convertArray(armControl.getObjectPickedUp());*/
+                    objectPickedUp = armControl.getObjectPickedUp();
+                    sendMultipleData(COLORE, objectPickedUp, objectPickedUp.length);
+                    objectNotPicked = armControl.getObjectNotPicked();
+                    sendSingleData(NOTPICKED, objectNotPicked);
+                    objectPicked = armControl.getObjectPicked();
+                    sendSingleData(PICKED, objectPicked);
+                    objectDetected = armControl.getObjectDetected();
+                    sendSingleData(DETECTED, objectDetected);
+                    armControl.setState(false);
+                }
+            }
+            System.out.println("Sender Terminated");
+        }
     }
 }

@@ -1,17 +1,20 @@
+import lejos.hardware.lcd.LCD;
 import lejos.hardware.motor.EV3LargeRegulatedMotor;
 
 class Movement extends Thread
 {
     private int speed = 200;
     private int acceleration = 6000;
+    private int angle = 415;
     private static final String FORWARD = "Forward";
     private static final String BACKWARD = "Backward";
-    private boolean go=true;
+    private boolean go = true;
     private EV3LargeRegulatedMotor sx, dx;
     private String direction;
-    private boolean mutex=true;
+    private boolean mutex = true;
     private boolean automatic = false;
-    private boolean done = false;
+    private boolean manual = false;
+    private boolean auto = false;
 
     /***
      * Constructor for Motor control Thread
@@ -34,28 +37,51 @@ class Movement extends Thread
         {
             if(automatic)
             {
-                if(!done)
+                if(!auto)
                 {
                     System.out.println("Automatic activated");
+                    LCD.clear();
                     forward();
-                    done = true;
+                    auto = true;
                 }
             }
             else {
-                if(!done){
+                if(!manual){
                     System.out.println("Manual activated");
+                    LCD.clear();
                     brake();
-                    done = true;
+                    manual = true;
                 }
             }
         }
         brake();
     }
 
+    public void turn90DegDx()
+    {
+        brake();
+        System.out.println("turndx");
+        LCD.clear();
+        dx.rotate(angle,true);
+        sx.rotate(-angle);
+        brake();
+    }
+
+    void turn90DegSx()
+    {
+        brake();
+        System.out.println("turnsx");
+        LCD.clear();
+        sx.rotate(angle,true);
+        dx.rotate(-angle);
+        brake();
+    }
+
     public void turnDx()
     {
-        System.out.println("turndx");
         brake();
+        System.out.println("turndx");
+        LCD.clear();
         dx.forward();
         sx.backward();
         try
@@ -71,8 +97,9 @@ class Movement extends Thread
 
     void turnSx()
     {
-        System.out.println("turnsx");
         brake();
+        System.out.println("turnsx");
+        LCD.clear();
         dx.backward();
         sx.forward();
         try
@@ -89,22 +116,25 @@ class Movement extends Thread
     public void brake()
     {
         System.out.println("Brake");
+        LCD.clear();
         sx.stop(true);
         dx.stop(true);
     }
 
     public void forward()
     {
-        System.out.println("forward");
         brake();
+        System.out.println("forward");
+        LCD.clear();
         dx.backward();
         sx.backward();
     }
 
     void backward()
     {
-        System.out.println("backward");
         brake();
+        System.out.println("backward");
+        LCD.clear();
         dx.forward();
         sx.forward();
     }
@@ -170,13 +200,13 @@ class Movement extends Thread
     }
 
     public void setAuto(){
+        auto = false;
         automatic = true;
-        done = false;
     }
 
     public void setManual(){
+        manual = false;
         automatic = false;
-        done = false;
     }
 
     public void getTacho()
@@ -216,6 +246,7 @@ class Movement extends Thread
     public void turnDxBluetooth()
     {
         System.out.println("turndx");
+        LCD.clear();
         brake();
         dx.forward();
         sx.backward();
@@ -224,6 +255,7 @@ class Movement extends Thread
     void turnSxBluetooth()
     {
         System.out.println("turnsx");
+        LCD.clear();
         brake();
         dx.backward();
         sx.forward();

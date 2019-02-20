@@ -2,20 +2,20 @@ import lejos.hardware.sensor.EV3ColorSensor;
 
 class FallDetection extends Thread
 {
-    private EV3ColorSensor fallSensor;
     private boolean go = true;
+    private Movement movement;
+    private EV3ColorSensor fallSensor;
     private float limit;
     private float floor;
-    private Movement movement;
     private float[] intensitySample;
     private boolean automatic = false;
 
     public FallDetection(EV3ColorSensor fallSensor, Movement movement)
     {
         super("FallDetector");
+        /*this.movement = movement;
         this.fallSensor = fallSensor;
-        this.movement = movement;
-        intensitySample = new float[fallSensor.getRedMode().sampleSize()];
+        intensitySample = new float[fallSensor.getRedMode().sampleSize()];*/
     }
 
     public FallDetection(EV3ColorSensor fallSensor, float limit, Movement movement)
@@ -46,7 +46,7 @@ class FallDetection extends Thread
                     {
                         e.printStackTrace();
                     }
-                    movement.turnSx();
+                    movement.turn90DegSx();
                     movement.forward();
                     movement.controlDone();
                     System.out.println("fall avoided");
@@ -62,6 +62,7 @@ class FallDetection extends Thread
     }
 
     public void setAuto(){
+        limit = getIntensity();
         automatic = true;
     }
 

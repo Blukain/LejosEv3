@@ -1,3 +1,5 @@
+import lejos.hardware.Button;
+
 class ButtonDetection extends Thread
 {
     private boolean go;
@@ -6,6 +8,7 @@ class ButtonDetection extends Thread
     private ObjectDetection objectDetection;
     private ArmControl armControl;
     private BluetoothThread bluetooth;
+    private int position;
 
     public ButtonDetection(BluetoothThread bluetooth)
     {
@@ -30,10 +33,17 @@ class ButtonDetection extends Thread
 
     @Override
     public void run()
-    {/*
+    {
+        position = 0;
         while(go)
         {
-            if(Button.waitForAnyPress()==Button.ID_ENTER)
+            int id = Button.waitForAnyPress();
+            if(id == Button.ID_ENTER){
+                movement.setAuto();
+                objectDetection.setAuto();
+                //fallDetection.setAuto();
+            }
+            if(id == Button.ID_ESCAPE)
             {
                 if (movement != null)
                 {
@@ -41,7 +51,7 @@ class ButtonDetection extends Thread
                 }
                 if (armControl != null)
                 {
-                    //armControl.terminate();
+                    armControl.terminate();
                 }
                 if (fallDetection != null)
                 {
@@ -57,10 +67,22 @@ class ButtonDetection extends Thread
                 }
                 terminate();
             }
-        }*/
+            if(id == Button.ID_RIGHT) armControl.openClamp();
+            if(id == Button.ID_LEFT) armControl.closeClamp();
+            if(id == Button.ID_UP){
+                armControl.liftUp();
+                position = 0;
+            }
+            if(id == Button.ID_DOWN){
+                if(position<100){
+                    position = position+10;
+                    armControl.liftBluetooth(position);
+                }
+            }
+        }
         try
         {
-            sleep(15000);
+            sleep(1000);
         }
         catch (InterruptedException e)
         {

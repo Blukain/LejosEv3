@@ -1,3 +1,7 @@
+import lejos.hardware.Audio;
+import lejos.hardware.LocalBTDevice;
+import lejos.hardware.ev3.EV3;
+import lejos.hardware.ev3.LocalEV3;
 
 class SpeakerController extends Thread
 {
@@ -12,7 +16,7 @@ class SpeakerController extends Thread
     private String RELEASED = "\"Object released\"";
     private String NOTPICKIT = "\"Isn't an object to pickup\"";
     private boolean go = true;
-    //private Speaker speaker;
+    private Audio speaker;
     private boolean mutex = false;
     private boolean starting;
     private boolean setting;
@@ -25,12 +29,10 @@ class SpeakerController extends Thread
     private boolean released;
     private boolean notpick;
     private boolean speak;
-/*
+
     public SpeakerController()
     {
-        super("SpeakerController");
-        this.speaker = new Speaker()
-        ;
+        speaker = LocalEV3.get().getAudio();
     }
 
     @Override
@@ -96,7 +98,6 @@ class SpeakerController extends Thread
     }
 
     private void speak(String text){
-        speaker.playText(text);
     }
 
     public synchronized void getControl()
@@ -121,12 +122,8 @@ class SpeakerController extends Thread
 
     private void setup()
     {
-        speaker.setPCMVolume(256);
-        speaker.setSpeed(100);
-        speaker.setAmplitude(Speaker.AMPLITUDE);
-        speaker.setPitch(Speaker.PITCH);
-        reset();
-    }*/
+
+    }
 
     private void reset()
     {

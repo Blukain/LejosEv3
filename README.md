@@ -16,6 +16,9 @@ and communicate to send and receive data from and to app.
 I personally use IntelliJ Idea from JetBrains, so this instructions are based on it.
 
 First of all, clone the repo, and start from there, every library needed is included in lib folder.
+
 Changes to be made interest controller class.
+
 The main class just create sensors and motors, and threads pass them what needed.
+
 All the other classes are Thread class indipendent, some of them controls others.
